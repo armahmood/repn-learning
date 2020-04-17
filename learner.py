@@ -2,47 +2,48 @@ import numpy as np
 import torch
 from torch import nn, optim
 import matplotlib.pyplot as plt
+from torch.nn.parameter import Parameter
 
 T = 30000
 nbin = 200
 n_inp = 10
 n_tl1 = 20
-def ltu(input):
+def calculate_threshold(input, weights):
+  S_i = 0
+  for weight in weights:
+    if weight<0:
+      S_i += 1
+  threshold = len(input)*0.6 - S_i
+  return threshold
+
+def ltu(input, weights):
   i = 0
-  for element in input:
-    if input[i]<0.6:
-      input[i]=0.0
+  feature_vector = []
+  for i in range(n_tl1):
+    tau_i = calculate_threshold(input, weights[i])
+    x = weights[i]
+    if float(torch.mm(x, input)) < tau_i:
+      feature_vector.append(0.0)
     else: 
-      input[i]=1.0
+      feature_vector.append(1.0)
     i=i+1
-  return input
+  return torch.from_numpy(feature_vector)
 
-class LTU(torch.autograd.Function):
-
-  @staticmethod
-  def forward(ctx, input):
-    ctx.save_for_backward(input)
-    return ltu(input)
+class LTU(nn.Module):
+  def __init__(self, n_inp, n_tl1):
+    super().__init__()
+    self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
   
-  @staticmethod
-  def backward(ctx, grad_output):
-    input, = ctx.saved_tensors
-    grad_input = grad_output.clone()
-    grad_input = torch.sigmoid(input-0.6)*(1-torch.sigmoid(input-0.6))
-    return grad_input
+  def forward(self, input):
+    return ltu(input, self.weight)
 
-class LTUact(nn.Module):
-  def __init__(self):
-    super(LTUact, self).__init__()
-    self.act = LTU.apply
-  
-  def forward(self, x):
-    x= self.act(x)
-    return x
+def input_weight_init(size):
+  weight_choice = [1.00,-1.00]
+  inp_weights = np.random.choice(weight_choice, size)
+  return torch.from_numpy(inp_weights)
 
-activation_function = LTUact()
 torch.manual_seed(0)
-tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
+tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), LTU(n_tl1, n_tl1), nn.Linear(n_tl1, 1))
 with torch.no_grad():
     tnet[2].weight *= 100
     tnet[0].weight *= 1
@@ -50,7 +51,7 @@ lossfunc = nn.MSELoss()
 
 for n_l1 in [10, 30, 100, 1000]:
     torch.manual_seed(1000)
-    net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function, nn.Linear(n_l1, 1))
+    net = nn.Sequential(nn.Linear(n_inp, n_l1), LTU(n_tl1, n_tl1), nn.Linear(n_l1, 1))
     with torch.no_grad():
         net[2].weight *= 0
         net[2].bias *= 0

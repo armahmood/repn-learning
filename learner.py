@@ -36,25 +36,27 @@ class LTU(nn.Module):
   def forward(self, input):
     return ltu(input, self.weight)
 
-def input_weight_init(size):
-  weight_choice = [1.00,-1.00]
-  inp_weights = np.random.choice(weight_choice, size)
-  return torch.from_numpy(inp_weights)
-
+def input_weight_init(inp, out):
+  weight_choice = [1,-1]
+  inp_weights = np.random.choice(weight_choice, (out,inp))
+  return torch.from_numpy(inp_weights).float()
+  
 activation_function = LTU(n_inp, n_tl1)
 torch.manual_seed(0)
 tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
 
 with torch.no_grad():
+    tnet[0].weight.data = input_weight_init(n_inp, n_tl1)
     tnet[1].weight = tnet[0].weight
 lossfunc = nn.MSELoss()
 
 
-for n_l1 in [10, 30, 100, 1000]:
+for n_l1 in [10, 30, 100]:
     torch.manual_seed(1000)
     activation_function_ = LTU(n_inp, n_l1)
     net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
     with torch.no_grad():
+        net[0].weight.data = input_weight_init(n_inp, n_l1)
         net[1].weight = net[0].weight 
         net[2].weight *= 0
         net[2].bias *= 0

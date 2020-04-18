@@ -46,13 +46,16 @@ torch.manual_seed(0)
 tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
 
 with torch.no_grad():
-    tnet[1].weight.data = tnet[0].weight.data
+    tnet[1].weight = tnet[0].weight
 lossfunc = nn.MSELoss()
+
 
 for n_l1 in [10, 30, 100, 1000]:
     torch.manual_seed(1000)
-    net = nn.Sequential(nn.Linear(n_inp, n_l1), nn.Sigmoid(), nn.Linear(n_l1, 1))
+    activation_function_ = LTU(n_inp, n_l1)
+    net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
     with torch.no_grad():
+        net[1].weight = net[0].weight 
         net[2].weight *= 0
         net[2].bias *= 0
     sgd = optim.SGD(net[2:].parameters(), lr=1/n_l1)

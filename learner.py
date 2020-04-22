@@ -11,23 +11,18 @@ n_inp = 10
 n_tl1 = 20
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
-  S_i = 0
-  for weight in weights:
-    if weight<0:
-      S_i += 1
+  S_i = sum(weight < 0 for weight in weights)
   threshold = len(weights)*0.6 - S_i
   return threshold
 
 def ltu(input, weights):
   """LTU logic"""
-  i = 0
   for i in range(len(input)):
     tau_i = calculate_threshold(weights[i])
     if input[i] < tau_i:
       input[i] = 0.0
     else: 
       input[i] = 1.0
-    i=i+1
   return input
 
 class LTU(nn.Module):
@@ -35,6 +30,8 @@ class LTU(nn.Module):
   def __init__(self, n_inp, n_tl1):
     super().__init__()
     self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
+    #To record output features of LTU layer
+    self.out_features = Parameter(torch.Tensor(n_tl1))
   
   def forward(self, input):
     return ltu(input, self.weight)
@@ -58,22 +55,24 @@ with torch.no_grad():
 lossfunc = nn.MSELoss()
 
 
-for n_l1 in [10, 30, 100]:
+for n_l1 in [10, 30, 100, 1000]:
     torch.manual_seed(1000)
     activation_function_ = LTU(n_inp, n_l1)
     net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
     with torch.no_grad():
         net[0].weight.data = input_weight_init(n_inp, n_l1)
         net[1].weight = net[0].weight 
-        net[2].weight *= 0
-        net[2].bias *= 0
-    sgd = optim.SGD(net[2:].parameters(), lr=1/n_l1)
+        torch.nn.init.zeros_(net[2].weight)
+        torch.nn.init.zeros_(net[2].bias)
+    f_out = net[1].out_features.data
+    step_size_param = 0.1/(f_out.norm()**2)
+    sgd = optim.SGD(net[2:].parameters(), lr=step_size_param)
 
     torch.manual_seed(2000)
     losses = []
     for t in range(T):
         inp = torch.rand(n_inp)
-        target = tnet(inp)+ torch.randn(1)
+        target = tnet(inp) + torch.randn(1)
         pred = net(inp)
         loss = lossfunc(target, pred)
         losses.append(loss.item())

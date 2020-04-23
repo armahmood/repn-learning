@@ -34,7 +34,9 @@ class LTU(nn.Module):
     self.out_features = Parameter(torch.Tensor(n_tl1))
   
   def forward(self, input):
-    return ltu(input, self.weight)
+    input = ltu(input, self.weight)
+    self.out_features.data = input
+    return input
 
 def input_weight_init(inp, out):
   """Function for initializing input weight"""

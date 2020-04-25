@@ -11,7 +11,7 @@ n_inp = 10
 n_tl1 = 20
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
-  S_i = sum(weight < 0 for weight in weights)
+  S_i = len(weights[weights<0])
   threshold = len(weights)*0.6 - S_i
   return threshold
 
@@ -31,11 +31,11 @@ class LTU(nn.Module):
     super().__init__()
     self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
     #To record output features of LTU layer
-    self.out_features = Parameter(torch.Tensor(n_tl1))
+    self.out_features = None
   
   def forward(self, input):
     input = ltu(input, self.weight)
-    self.out_features.data = input
+    self.out_features = input.clone()
     return input
 
 def input_weight_init(inp, out):
@@ -43,7 +43,13 @@ def input_weight_init(inp, out):
   weight_choice = [1,-1]
   inp_weights = np.random.choice(weight_choice, (out,inp))
   return torch.from_numpy(inp_weights).float()
-  
+
+def update_lr(optimizer,lr):
+    """Scheduler to update learning rate at every iteration"""
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    return optimizer
+
 activation_function = LTU(n_inp, n_tl1)
 torch.manual_seed(0)
 tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
@@ -63,15 +69,14 @@ for n_l1 in [10, 30, 100, 1000]:
     net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
     with torch.no_grad():
         net[0].weight.data = input_weight_init(n_inp, n_l1)
-        net[1].weight = net[0].weight 
+        net[1].weight = net[0].weight
         torch.nn.init.zeros_(net[2].weight)
         torch.nn.init.zeros_(net[2].bias)
-    f_out = net[1].out_features.data
-    step_size_param = 0.1/(f_out.norm()**2)
-    sgd = optim.SGD(net[2:].parameters(), lr=step_size_param)
-
+    
+    sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
     torch.manual_seed(2000)
     losses = []
+    sample_average = 0.0
     for t in range(T):
         inp = torch.rand(n_inp)
         target = tnet(inp) + torch.randn(1)
@@ -80,7 +85,13 @@ for n_l1 in [10, 30, 100, 1000]:
         losses.append(loss.item())
         net.zero_grad()
         loss.backward()
+        #Evaluate step size parameter
+        f_out = net[1].out_features
+        sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
+        step_size_param = 0.1/sample_average
+        sgd = update_lr(sgd,step_size_param)
         sgd.step()
+        
     losses = np.array(losses)
     bin_losses = losses.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=n_l1)

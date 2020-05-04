@@ -71,12 +71,12 @@ def initialize_learning_net(n_inp, n_l1):
     torch.nn.init.zeros_(net[2].bias)
   return net
 
-def run_experiment(n_inp, n_tl1, T, n_l1):
+def run_experiment(n_inp, n_tl1, T, n_l1, seed_num):
   tnet = initialize_target_net(n_inp, n_tl1)
   lossfunc = nn.MSELoss()
   net = initialize_learning_net(n_inp, n_l1)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
-  torch.manual_seed(2000)
+  torch.manual_seed(seed_num)
   losses = []
   sample_average = 0.0
   with progressbar.ProgressBar(max_value=T) as bar:
@@ -108,8 +108,10 @@ def main():
                       help="Input dimension")
   parser.add_argument("-f", "--features",  nargs='+', type=int, default=[100, 300, 1000],
                       help="Number of dimension(pass multiple)")
-  parser.add_argument("-s", "--save", type=bool, default=False,
+  parser.add_argument("-o", "--save", type=bool, default=False,
                       help="Saves the output graph")
+  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[2000],
+                      help="seeds in case of multiple runs")
   args = parser.parse_args()
   T = args.examples
   n = args.runs 
@@ -117,12 +119,16 @@ def main():
   n_inp = args.input_size
   n_tl1 = 20
   n_feature = args.features
+  n_seed = args.seeds
+  if (len(n_seed)!=n):
+    print("Insuffcient number of seeds")
+    return
   for nl_1 in n_feature:
     net_loss = 0
     print("No of Features:", nl_1)
     for l in range(n):
       print("Run:", l+1)
-      net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1)
+      net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l])
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)

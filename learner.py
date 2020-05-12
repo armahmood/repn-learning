@@ -36,8 +36,9 @@ class LTU(nn.Module):
     self.out_features = input.clone()
     return input
 
-def input_weight_init(inp, out):
+def input_weight_init(inp, out, seed_num):
   """Function for initializing input weight"""
+  np.random.seed(seed_num + 3000)
   weight_choice = [1,-1]
   inp_weights = np.random.choice(weight_choice, (out,inp))
   return torch.from_numpy(inp_weights).float()
@@ -48,35 +49,35 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-def initialize_target_net(n_inp, n_tl1):
+def initialize_target_net(n_inp, n_tl1, seed_num):
   torch.manual_seed(0)
   activation_function = LTU(n_inp, n_tl1)
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
   with torch.no_grad():
     #Input weights initialized with +1/-1
-    tnet[0].weight.data = input_weight_init(n_inp, n_tl1)
+    tnet[0].weight.data = input_weight_init(n_inp, n_tl1, seed_num)
     #Output layer weights initialized with N(0,1)
     torch.nn.init.normal_(tnet[2].weight, mean=0.0, std=1.0)
     tnet[1].weight = tnet[0].weight
   return tnet
 
-def initialize_learning_net(n_inp, n_l1):
-  torch.manual_seed(1000)
+def initialize_learning_net(n_inp, n_l1, seed_num):
+  torch.manual_seed(seed_num + 1000)
   activation_function_ = LTU(n_inp, n_l1)
   net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
-    net[0].weight.data = input_weight_init(n_inp, n_l1)
+    net[0].weight.data = input_weight_init(n_inp, n_l1, seed_num)
     net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
   return net
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num):
-  tnet = initialize_target_net(n_inp, n_tl1)
+  tnet = initialize_target_net(n_inp, n_tl1, seed_num)
   lossfunc = nn.MSELoss()
-  net = initialize_learning_net(n_inp, n_l1)
+  net = initialize_learning_net(n_inp, n_l1, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
-  torch.manual_seed(seed_num)
+  torch.manual_seed(seed_num + 2000)
   losses = []
   sample_average = 0.0
   with progressbar.ProgressBar(max_value=T) as bar:

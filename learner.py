@@ -50,7 +50,7 @@ def update_lr(optimizer,lr):
     return optimizer
 
 def initialize_target_net(n_inp, n_tl1, seed_num):
-  torch.manual_seed(0)
+  torch.manual_seed(seed_num)
   activation_function = LTU(n_inp, n_tl1)
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
   with torch.no_grad():

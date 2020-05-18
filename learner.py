@@ -36,9 +36,12 @@ class LTU(nn.Module):
     self.out_features = input.clone()
     return input
 
-def input_weight_init(inp, out, seed_num):
+def input_weight_init(inp, out, seed_num, target_net=True):
   """Function for initializing input weight"""
-  np.random.seed(seed_num + 3000)
+  if (target_net):
+    np.random.seed(seed_num + 3000)
+  else:
+    np.random.seed(seed_num + 5000)
   weight_choice = [1,-1]
   inp_weights = np.random.choice(weight_choice, (out,inp))
   return torch.from_numpy(inp_weights).float()
@@ -49,8 +52,8 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-def initialize_target_net(n_inp, n_tl1, seed_num):
-  torch.manual_seed(seed_num)
+def initialize_target_net(n_inp, n_tl1, seed_num_target, seed_num):
+  torch.manual_seed(seed_num_target)
   activation_function = LTU(n_inp, n_tl1)
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
   with torch.no_grad():
@@ -66,14 +69,14 @@ def initialize_learning_net(n_inp, n_l1, seed_num):
   activation_function_ = LTU(n_inp, n_l1)
   net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
-    net[0].weight.data = input_weight_init(n_inp, n_l1, seed_num)
+    net[0].weight.data = input_weight_init(n_inp, n_l1, seed_num, target_net=False)
     net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
   return net
 
-def run_experiment(n_inp, n_tl1, T, n_l1, seed_num):
-  tnet = initialize_target_net(n_inp, n_tl1, seed_num)
+def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
+  tnet = initialize_target_net(n_inp, n_tl1, target_seed, seed_num)
   lossfunc = nn.MSELoss()
   net = initialize_learning_net(n_inp, n_l1, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
@@ -111,8 +114,10 @@ def main():
                       help="Number of dimension(pass multiple)")
   parser.add_argument("-o", "--save", type=bool, default=False,
                       help="Saves the output graph")
-  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[2000],
+  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[0],
                       help="seeds in case of multiple runs")
+  parser.add_argument("-t", "--target_seed", type=int, default=[0],
+                      help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples
   n = args.runs 
@@ -121,6 +126,7 @@ def main():
   n_tl1 = 20
   n_feature = args.features
   n_seed = args.seeds
+  t_seed = args.target_seed
   if (len(n_seed)!=n):
     print("Insuffcient number of seeds")
     return
@@ -129,7 +135,7 @@ def main():
     print("No of Features:", nl_1)
     for l in range(n):
       print("Run:", l+1)
-      net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l])
+      net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)

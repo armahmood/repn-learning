@@ -36,12 +36,8 @@ class LTU(nn.Module):
     self.out_features = input.clone()
     return input
 
-def input_weight_init(inp, out, seed_num, target_net=True):
+def input_weight_init(inp, out):
   """Function for initializing input weight"""
-  if (target_net):
-    np.random.seed(seed_num + 3000)
-  else:
-    np.random.seed(seed_num + 5000)
   weight_choice = [1,-1]
   inp_weights = np.random.choice(weight_choice, (out,inp))
   return torch.from_numpy(inp_weights).float()
@@ -52,31 +48,34 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-def initialize_target_net(n_inp, n_tl1, seed_num_target, seed_num):
+def initialize_target_net(n_inp, n_tl1, seed_num_target):
   torch.manual_seed(seed_num_target)
   activation_function = LTU(n_inp, n_tl1)
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
   with torch.no_grad():
     #Input weights initialized with +1/-1
-    tnet[0].weight.data = input_weight_init(n_inp, n_tl1, seed_num)
+    np.random.seed(seed_num_target)
+    tnet[0].weight.data = input_weight_init(n_inp, n_tl1)
     #Output layer weights initialized with N(0,1)
     torch.nn.init.normal_(tnet[2].weight, mean=0.0, std=1.0)
     tnet[1].weight = tnet[0].weight
   return tnet
 
 def initialize_learning_net(n_inp, n_l1, seed_num):
-  torch.manual_seed(seed_num + 1000)
+  torch.manual_seed(seed_num)
   activation_function_ = LTU(n_inp, n_l1)
   net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
-    net[0].weight.data = input_weight_init(n_inp, n_l1, seed_num, target_net=False)
+    np.random.seed(seed_num)
+    net[0].weight.data = input_weight_init(n_inp, n_l1)
     net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
   return net
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
-  tnet = initialize_target_net(n_inp, n_tl1, target_seed, seed_num)
+  tnet = initialize_target_net(n_inp, n_tl1, target_seed)
+  print(tnet[-1].weight.norm())
   lossfunc = nn.MSELoss()
   net = initialize_learning_net(n_inp, n_l1, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
@@ -114,9 +113,9 @@ def main():
                       help="Number of dimension(pass multiple)")
   parser.add_argument("-o", "--save", type=bool, default=False,
                       help="Saves the output graph")
-  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[0],
+  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=[0],
+  parser.add_argument("-t", "--target_seed", type=int, default=4000,
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples
@@ -127,6 +126,12 @@ def main():
   n_feature = args.features
   n_seed = args.seeds
   t_seed = args.target_seed
+  try:
+    assert t_seed not in n_seed
+  except:
+    print("Error: t_seed has to be different than n_seed")
+    import sys
+    # sys.exit(1)
   if (len(n_seed)!=n):
     print("Insuffcient number of seeds")
     return
@@ -146,6 +151,7 @@ def main():
     plt.savefig('out.png')
   else:
     plt.show()
+
 
 if __name__ == "__main__":
     main()

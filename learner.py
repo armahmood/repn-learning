@@ -80,7 +80,6 @@ def initialize_learning_net(n_inp, n_l1, seed_num):
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   """Experiment with different number of features without search"""
   tnet = initialize_target_net(n_inp, n_tl1, target_seed)
-  print(tnet[-1].weight.norm())
   lossfunc = nn.MSELoss()
   net = initialize_learning_net(n_inp, n_l1, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
@@ -158,6 +157,11 @@ def main():
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)
+  tnet = initialize_target_net(n_inp, n_tl1, t_seed)
+  norm_out = tnet[-1].weight.norm().data
+  norm_out = format(float(norm_out), '.4f')
+  title = "Output weight norm of t-net: " + str(norm_out) 
+  plt.suptitle(title, fontsize=13)
   axes = plt.axes()
   axes.set_ylim([1.0, 3.5])
   plt.legend()

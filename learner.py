@@ -6,6 +6,8 @@ from random import choice
 from torch.nn.parameter import Parameter
 import progressbar
 import argparse
+import os
+import sys
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
@@ -49,6 +51,7 @@ def update_lr(optimizer,lr):
     return optimizer
 
 def initialize_target_net(n_inp, n_tl1, seed_num_target):
+  """Initializes target network"""
   torch.manual_seed(seed_num_target)
   activation_function = LTU(n_inp, n_tl1)
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=True), activation_function, nn.Linear(n_tl1, 1))
@@ -62,6 +65,7 @@ def initialize_target_net(n_inp, n_tl1, seed_num_target):
   return tnet
 
 def initialize_learning_net(n_inp, n_l1, seed_num):
+  """Initializes learning network"""
   torch.manual_seed(seed_num)
   activation_function_ = LTU(n_inp, n_l1)
   net = nn.Sequential(nn.Linear(n_inp, n_l1), activation_function_, nn.Linear(n_l1, 1))
@@ -74,6 +78,7 @@ def initialize_learning_net(n_inp, n_l1, seed_num):
   return net
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
+  """Experiment with different number of features without search"""
   tnet = initialize_target_net(n_inp, n_tl1, target_seed)
   print(tnet[-1].weight.norm())
   lossfunc = nn.MSELoss()
@@ -126,15 +131,24 @@ def main():
   n_feature = args.features
   n_seed = args.seeds
   t_seed = args.target_seed
+
+  try:
+    path = "output/out_" + str(t_seed)+".png"
+    assert not os.path.exists(path)
+  except:
+    print("Experiment results already exist")
+    sys.exit(1)
+
   try:
     assert t_seed not in n_seed
   except:
     print("Error: t_seed has to be different than n_seed")
-    import sys
-    # sys.exit(1)
+    sys.exit(1)
+
   if (len(n_seed)!=n):
     print("Insuffcient number of seeds")
     return
+
   for nl_1 in n_feature:
     net_loss = 0
     print("No of Features:", nl_1)
@@ -147,8 +161,14 @@ def main():
   axes = plt.axes()
   axes.set_ylim([1.0, 3.5])
   plt.legend()
+
   if args.save:
-    plt.savefig('out.png')
+    try:
+      assert os.path.exists("output/")
+    except:
+      os.makedirs('output/') 
+    filename = "output/out_" + str(t_seed)
+    plt.savefig(filename)
   else:
     plt.show()
 

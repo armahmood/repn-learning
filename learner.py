@@ -106,7 +106,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   return losses
 
 def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
-  tnet = initialize_target_net(n_inp, n_tl1, target_seed, seed_num)
+  tnet = initialize_target_net(n_inp, n_tl1, target_seed)
   lossfunc = nn.MSELoss()
   net = initialize_learning_net(n_inp, n_l1, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
@@ -135,7 +135,7 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
       with torch.no_grad():
         ages += 1
         utils += 0.01*(torch.abs(net[2].weight.data[0]*neck) - utils)
-        for i in range(n_l1//10):
+        for i in range(n_l1//100):
           weak_node_i = torch.argmin(utils)
           weight_choice = [1.0,-1.0]
           net[0].weight[weak_node_i] = torch.from_numpy(np.random.choice(weight_choice, (net[0].weight.size()[1],)))
@@ -151,6 +151,8 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
 
 def main():
   parser = argparse.ArgumentParser(description="Test framework")
+  parser.add_argument("-se", "--search", type=bool, default=False,
+                      help="run experiment with search")
   parser.add_argument("-e", "--examples", type=int, default=30000,
                       help="no of examples to learn on")
   parser.add_argument("-n", "--runs", type=int, default=1,
@@ -197,7 +199,10 @@ def main():
     print("No of Features:", nl_1)
     for l in range(n):
       print("Run:", l+1)
-      net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+      if args.search:
+        net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+      else:
+        net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)

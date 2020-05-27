@@ -8,6 +8,7 @@ import progressbar
 import argparse
 import os
 import sys
+from fractions import Fraction
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
@@ -105,6 +106,12 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   losses = np.array(losses)
   return losses
 
+def initialize_skipper(n_l1):
+  a = Fraction(n_l1, 200)
+  skip = a.denominator - a.numerator
+  run = a.numerator
+  return skip, run
+
 def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   tnet = initialize_target_net(n_inp, n_tl1, target_seed)
   lossfunc = nn.MSELoss()
@@ -115,6 +122,15 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   ages = torch.zeros(n_l1)
   utils = torch.zeros(n_l1)
   sample_average = 0.0
+  
+  if n_l1//200 >=1:
+    itr = n_l1//200
+    run = 1
+    skip = 0
+  else:
+    itr = 1
+    skip, run = initialize_skipper(n_l1)
+
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
       inp = torch.rand(n_inp)
@@ -135,14 +151,21 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
       with torch.no_grad():
         ages += 1
         utils += 0.01*(torch.abs(net[2].weight.data[0]*neck) - utils)
-        for i in range(n_l1//100):
-          weak_node_i = torch.argmin(utils)
-          weight_choice = [1.0,-1.0]
-          net[0].weight[weak_node_i] = torch.from_numpy(np.random.choice(weight_choice, (net[0].weight.size()[1],)))
-          net[0].bias[weak_node_i] = torch.randn(1)
-          net[2].weight[0][weak_node_i] = 0.0
-          utils[weak_node_i] = torch.median(utils)
-          ages[weak_node_i] = 0
+        if skip==0 and run != 0:
+          for _ in range(itr):
+            weak_node_i = torch.argmin(utils)
+            weight_choice = [1.0,-1.0]
+            net[0].weight[weak_node_i] = torch.from_numpy(np.random.choice(weight_choice, (net[0].weight.size()[1],)))
+            net[0].bias[weak_node_i] = torch.randn(1)
+            net[2].weight[0][weak_node_i] = 0.0
+            utils[weak_node_i] = torch.median(utils)
+            ages[weak_node_i] = 0
+            if(n_l1//200 < 1):
+              run = run - 1
+        elif run == 0:
+          skip, run = initialize_skipper(n_l1)
+        else:
+          skip = skip - 1
 
       bar.update(t)
   losses = np.array(losses)

@@ -116,11 +116,14 @@ def initialize_skipper(n_l1):
   return skip, run
 
 def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
-  tnet = initialize_target_net(n_inp, n_tl1, target_seed)
+  tgen = torch.Generator()
+  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed)
   lossfunc = nn.MSELoss()
-  net = initialize_learning_net(n_inp, n_l1, seed_num)
+  lgen = torch.Generator()
+  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
-  torch.manual_seed(seed_num + 2000)
+  dgen = torch.Generator().manual_seed(seed_num + 2000)
+  lgen.manual_seed(seed_num + 3000)
   losses = []
   ages = torch.zeros(n_l1)
   utils = torch.zeros(n_l1)
@@ -136,8 +139,8 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
 
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
-      inp = torch.rand(n_inp)  ### 3
-      target = tnet(inp) + torch.randn(1)  ### 3
+      inp = torch.rand(n_inp, generator=dgen)  ### 3
+      target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
       neck = net[:2](inp)
       pred = net[2:](neck)
       loss = lossfunc(target, pred)
@@ -157,9 +160,7 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
         if skip==0 and run != 0:
           for _ in range(itr):
             weak_node_i = torch.argmin(utils)
-            weight_choice = [1.0,-1.0]
-            net[0].weight[weak_node_i] = torch.from_numpy(np.random.choice(weight_choice, (net[0].weight.size()[1],)))  ### 2
-            net[0].bias[weak_node_i] = torch.randn(1)  ### 2
+            net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
             net[2].weight[0][weak_node_i] = 0.0
             utils[weak_node_i] = torch.median(utils)
             ages[weak_node_i] = 0
@@ -191,7 +192,7 @@ def main():
                       help="Saves the output graph")
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=4000,
+  parser.add_argument("-t", "--target_seed", type=int, default=600,
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples
@@ -232,7 +233,8 @@ def main():
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)
-  tnet = initialize_target_net(n_inp, n_tl1, t_seed)
+  tgen = torch.Generator()
+  tnet = initialize_target_net(n_inp, n_tl1, tgen, t_seed)
   norm_out = tnet[-1].weight.norm().data
   norm_out = format(float(norm_out), '.4f')
   title = "Output weight norm of t-net: " + str(norm_out) 

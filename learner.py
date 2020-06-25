@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 from torch import nn, optim
+import matplotlib as mpl
+mpl.use('TKAgg')
 import matplotlib.pyplot as plt
 from random import choice
 from torch.nn.parameter import Parameter
@@ -61,6 +63,9 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target):
     #Input weights initialized with +1/-1
     tgen.manual_seed(seed_num_target)
     tnet[0].weight.data = (torch.randint(0, 2, tnet[0].weight.data.shape, generator=tgen)*2-1).float()  ### 1
+    if tnet[0].bias is not None:
+      print("tnet bias")
+      tnet[0].bias.data = torch.randn(tnet[0].bias.data.shape, generator=tgen)
     #Output layer weights initialized with N(0,1)
     tnet[2].weight.data = torch.randn(tnet[2].weight.data.shape, generator=tgen)  ### 1
     tnet[2].bias.data = torch.randn(tnet[2].bias.data.shape, generator=tgen)  ### 1
@@ -74,6 +79,9 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num):
   with torch.no_grad():
     lgen.manual_seed(seed_num)
     net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
+    if net[0].bias is not None:
+      print("lnet bias")
+      net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
@@ -92,10 +100,10 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
   sample_average = 0.0
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
-      inp = torch.rand(n_inp, generator=dgen)  ### 3
+      inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
       target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
       pred = net(inp)
-      loss = lossfunc(target, pred)
+      loss = lossfunc(pred, target)
       losses.append(loss.item())
       net.zero_grad()
       loss.backward()
@@ -139,11 +147,11 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
 
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
-      inp = torch.rand(n_inp, generator=dgen)  ### 3
+      inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
       target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
       neck = net[:2](inp)
       pred = net[2:](neck)
-      loss = lossfunc(target, pred)
+      loss = lossfunc(pred, target)
       losses.append(loss.item())
       net.zero_grad()
       loss.backward()
@@ -161,6 +169,8 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
           for _ in range(itr):
             weak_node_i = torch.argmin(utils)
             net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
+            if net[0].bias is not None:
+              net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0
             utils[weak_node_i] = torch.median(utils)
             ages[weak_node_i] = 0
@@ -184,7 +194,7 @@ def main():
                       help="no of examples to learn on")
   parser.add_argument("-n", "--runs", type=int, default=1,
                       help="number of runs")
-  parser.add_argument("-i", "--input_size", type=int, default=10,
+  parser.add_argument("-i", "--input_size", type=int, default=20,
                       help="Input dimension")
   parser.add_argument("-f", "--features",  nargs='+', type=int, default=[100, 300, 1000],
                       help="Number of dimension(pass multiple)")
@@ -192,7 +202,7 @@ def main():
                       help="Saves the output graph")
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=600,
+  parser.add_argument("-t", "--target_seed", type=int, default=1100,
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples

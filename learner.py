@@ -64,7 +64,6 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target):
     tgen.manual_seed(seed_num_target)
     tnet[0].weight.data = (torch.randint(0, 2, tnet[0].weight.data.shape, generator=tgen)*2-1).float()  ### 1
     if tnet[0].bias is not None:
-      print("tnet bias")
       tnet[0].bias.data = torch.randn(tnet[0].bias.data.shape, generator=tgen)
     #Output layer weights initialized with N(0,1)
     tnet[2].weight.data = torch.randn(tnet[2].weight.data.shape, generator=tgen)  ### 1
@@ -80,7 +79,6 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num):
     lgen.manual_seed(seed_num)
     net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
     if net[0].bias is not None:
-      print("lnet bias")
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
@@ -202,7 +200,7 @@ def main():
                       help="Saves the output graph")
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=1100,
+  parser.add_argument("-t", "--target_seed", type=int, default=900,
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples

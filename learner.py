@@ -11,7 +11,7 @@ import argparse
 import os
 import sys
 from fractions import Fraction
-
+import pickle
 
 """
 Three sources of randomness.
@@ -19,6 +19,20 @@ Three sources of randomness.
 2. Learning network
 3. Data generation
 """
+
+def store_losses(losses, features, seed_num, search=False):
+  if search:
+    path = 'losses/search/' + str(features) + '/'  
+  else:
+    path = 'losses/fixed/' + str(features) + '/'
+  try:
+    assert os.path.exists(path)
+  except:
+    os.makedirs(path)
+  fname = path + 'run_' + str(seed_num)
+  dbfile = open(fname, 'ab') 
+  pickle.dump(losses, dbfile)                      
+  dbfile.close()
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
@@ -186,7 +200,7 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
 
 def main():
   parser = argparse.ArgumentParser(description="Test framework")
-  parser.add_argument("-se", "--search", type=bool, default=False,
+  parser.add_argument("-se", "--search", action='store_true',
                       help="run experiment with search")
   parser.add_argument("-e", "--examples", type=int, default=30000,
                       help="no of examples to learn on")
@@ -198,6 +212,8 @@ def main():
                       help="Number of dimension(pass multiple)")
   parser.add_argument("-o", "--save", type=bool, default=False,
                       help="Saves the output graph")
+  parser.add_argument("--save_losses", type=bool, default=False,
+                      help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")                    
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
   parser.add_argument("-t", "--target_seed", type=int, default=900,
@@ -236,8 +252,14 @@ def main():
       print("Run:", l+1)
       if args.search:
         net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+        if args.save_losses:
+          store_losses(net_loss, n_feature[0], n_seed[0], search=True)
+          sys.exit(1)
       else:
         net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+        if args.save_losses:
+          store_losses(net_loss, n_feature[0], n_seed[0])
+          sys.exit(1)
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)

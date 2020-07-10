@@ -1,25 +1,10 @@
 #!/bin/bash
+#SBATCH --array=1-3
+#SBATCH --job-name=repn_learning   
+#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --account=def-ashique
+#SBATCH --output=repn_learning%A%a.out
+#SBATCH --error=repn_learning%A%a.err
 
-while getopts r:f:s:x: option
-    do
-        case "${option}" in
-            r) N=${OPTARG};;
-            f) features=${OPTARG};;
-            s) seeds=${OPTARG};;
-            x) search=${OPTARG};;
-        esac
-done
-
-for feature in ${features[@]}; do
-    for (( i = 1; i <= N; i++ )); do
-        for seed in ${seeds[@]}; do
-            if [ $search -eq 1 ]
-            then
-                nohup python learner.py --search -f $feature --seeds $seed --save_losses=True &> nohup${feature}_${i}_${search}.out &
-            else
-                nohup python learner.py -f $feature --seeds $seed --save_losses=True &> nohup${feature}_${i}_${search}.out &
-            fi
-        done
-    done
-done
-
+python learner.py --search -f 100 --seeds $SLURM_ARRAY_TASK_ID --save_losses=True

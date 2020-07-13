@@ -49,18 +49,22 @@ def main():
         if args.search and not plt_all:
             net_loss = calculate_average(features, n_seed, search=True)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
-            plt.plot(range(0, T, nbin), bin_losses, label=features)
+            label = str(features) + "-s"
+            plt.plot(range(0, T, nbin), bin_losses, label=label)
         elif not plt_all:
             net_loss = calculate_average(features, n_seed)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
-            plt.plot(range(0, T, nbin), bin_losses, label=features)
+            label = str(features) + "-f"
+            plt.plot(range(0, T, nbin), bin_losses, label=label)
         else:
             net_loss = calculate_average(features, n_seed, search=True)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
-            plt.plot(range(0, T, nbin), bin_losses, label=features)
+            label = str(features) + "-s"
+            plt.plot(range(0, T, nbin), bin_losses, label=label)
             net_loss = calculate_average(features, n_seed)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
-            plt.plot(range(0, T, nbin), bin_losses, label=features)
+            label = str(features) + "-f"
+            plt.plot(range(0, T, nbin), bin_losses, label=label)
             
     axes = plt.axes()
     axes.set_ylim([1.0, 3.5])

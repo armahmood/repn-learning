@@ -59,4 +59,4 @@ python plot_graph.py -f {size of features seperated by space} -s {Seed array}
 
 Here X axis represents number of examples and Y axis loss. `-s` is using search `-f` is fixed representation.
 
-![](/home/taapas/Downloads/final_out.png)
+![](final_out.png)

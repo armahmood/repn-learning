@@ -69,7 +69,7 @@ def main():
     axes = plt.axes()
     axes.set_ylim([1.0, 3.5])
     plt.legend()
-    plt.show()
+    plt.savefig(final.png)
 
 if __name__ == "__main__":
     main()

@@ -215,7 +215,7 @@ def main():
                       help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")                    
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=600,
+  parser.add_argument("-t", "--target_seed", type=int, default=900,
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples

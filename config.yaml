@@ -1,0 +1,18 @@
+#Configration File
+
+##Options
+examples : 30000
+runs : 1
+input_size : 20
+features : [100, 300, 1000]
+learner_seeds: [1]
+target_seed : 900
+
+##Activation:
+##Choices Available-
+##1. "LTU"
+##2. "Sigmoid"
+##3. "Tanh"
+##Add to activation dict for more options
+activation_target : "LTU"
+activation_learning : "LTU"

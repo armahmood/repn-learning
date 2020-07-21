@@ -60,3 +60,7 @@ python plot_graph.py -f {size of features seperated by space} -s {Seed array}
 Here X axis represents number of examples and Y axis loss. `-s` is using search `-f` is fixed representation.
 
 ![](final_out.png)
+
+### Extension of work:
+
+Different target net and learning net activation functions can be used. For the purpose edit `config.yaml` . Various options as stated above can also be changed using the configration file.

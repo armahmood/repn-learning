@@ -12,6 +12,7 @@ import os
 import sys
 from fractions import Fraction
 import pickle
+import yaml
 
 """
 Three sources of randomness.
@@ -19,6 +20,16 @@ Three sources of randomness.
 2. Learning network
 3. Data generation
 """
+
+#####UTILITY FUNCTIONS
+
+def update_config():
+    with open("config.yaml", 'r') as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+    return config
 
 def store_losses(losses, features, seed_num, search=False):
   if search:
@@ -33,6 +44,8 @@ def store_losses(losses, features, seed_num, search=False):
   dbfile = open(fname, 'ab') 
   pickle.dump(losses, dbfile)                      
   dbfile.close()
+
+#######
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
@@ -69,9 +82,15 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target):
+activations = {"LTU":LTU, "Sigmoid": nn.Sigmoid, "Tanh": nn.Tanh}
+
+def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
   """Initializes target network"""
-  activation_function = LTU(n_inp, n_tl1)
+  act = config["activation_target"]
+  if act=="LTU":
+    activation_function = activations[act](n_inp, n_tl1)
+  else:
+    activation_function = activations[act]()
   tnet = nn.Sequential(nn.Linear(n_inp, n_tl1, bias=False), activation_function, nn.Linear(n_tl1, 1))
   with torch.no_grad():
     #Input weights initialized with +1/-1
@@ -82,30 +101,36 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target):
     #Output layer weights initialized with N(0,1)
     tnet[2].weight.data = torch.randn(tnet[2].weight.data.shape, generator=tgen)  ### 1
     tnet[2].bias.data = torch.randn(tnet[2].bias.data.shape, generator=tgen)  ### 1
-    tnet[1].weight = tnet[0].weight
+    if act=="LTU":
+      tnet[1].weight = tnet[0].weight
   return tnet
 
-def initialize_learning_net(n_inp, n_l1, lgen, seed_num):
+def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   """Initializes learning network"""
-  activation_function_ = LTU(n_inp, n_l1)
+  act = config["activation_learning"]
+  if act=="LTU":
+    activation_function_ = activations[act](n_inp, n_l1)
+  else:
+    activation_function_ = activations[act]()
   net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
     net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
-    net[1].weight = net[0].weight
+    if act=="LTU":
+      net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
   return net
 
-def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
+def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   """Experiment with different number of features without search"""
   tgen = torch.Generator()
-  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed)
+  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num)
+  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   losses = []
@@ -114,13 +139,14 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
     for t in range(T):
       inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
       target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
-      pred = net(inp)
+      neck = net[:2](inp)
+      pred = net[2:](neck)
       loss = lossfunc(pred, target)
       losses.append(loss.item())
       net.zero_grad()
       loss.backward()
       #Evaluate step size parameter
-      f_out = net[1].out_features
+      f_out = neck
       sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
       step_size_param = 0.1/sample_average
       sgd = update_lr(sgd,step_size_param)
@@ -135,12 +161,12 @@ def initialize_skipper(n_l1):
   run = a.numerator
   return skip, run
 
-def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
+def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   tgen = torch.Generator()
-  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed)
+  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num)
+  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
@@ -199,24 +225,25 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed):
 
 
 def main():
-  parser = argparse.ArgumentParser(description="Test framework")
+  config = update_config()
+  parser = argparse.ArgumentParser(description="Generate and Test")
   parser.add_argument("-se", "--search", action='store_true',
                       help="run experiment with search")
-  parser.add_argument("-e", "--examples", type=int, default=30000,
+  parser.add_argument("-e", "--examples", type=int, default=config["examples"],
                       help="no of examples to learn on")
-  parser.add_argument("-n", "--runs", type=int, default=1,
+  parser.add_argument("-n", "--runs", type=int, default=config["runs"],
                       help="number of runs")
-  parser.add_argument("-i", "--input_size", type=int, default=20,
+  parser.add_argument("-i", "--input_size", type=int, default=config["input_size"],
                       help="Input dimension")
-  parser.add_argument("-f", "--features",  nargs='+', type=int, default=[100, 300, 1000],
+  parser.add_argument("-f", "--features",  nargs='+', type=int, default=config["features"],
                       help="Number of dimension(pass multiple)")
-  parser.add_argument("-o", "--save", type=bool, default=False,
+  parser.add_argument("-o", "--save", action='store_true',
                       help="Saves the output graph")
-  parser.add_argument("--save_losses", type=bool, default=False,
+  parser.add_argument("--save_losses", action='store_true',
                       help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")                    
-  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=[1],
+  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=config["learner_seeds"],
                       help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=900,
+  parser.add_argument("-t", "--target_seed", type=int, default=config["target_seed"],
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples
@@ -251,12 +278,12 @@ def main():
     for l in range(n):
       print("Run:", l+1)
       if args.search:
-        net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+        net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config)
         if args.save_losses:
           store_losses(net_loss, n_feature[0], n_seed[0], search=True)
           sys.exit(1)
       else:
-        net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed)
+        net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config)
         if args.save_losses:
           store_losses(net_loss, n_feature[0], n_seed[0])
           sys.exit(1)
@@ -264,7 +291,7 @@ def main():
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
     plt.plot(range(0, T, nbin), bin_losses, label=nl_1)
   tgen = torch.Generator()
-  tnet = initialize_target_net(n_inp, n_tl1, tgen, t_seed)
+  tnet = initialize_target_net(n_inp, n_tl1, tgen, t_seed, config)
   norm_out = tnet[-1].weight.norm().data
   norm_out = format(float(norm_out), '.4f')
   title = "Output weight norm of t-net: " + str(norm_out) 

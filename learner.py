@@ -174,7 +174,7 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   ages = torch.zeros(n_l1)
   utils = torch.zeros(n_l1)
   sample_average = 0.0
-  
+  util = torch.zeros(n_l1)
   if n_l1//200 >=1:
     itr = n_l1//200
     run = 1
@@ -202,15 +202,17 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
 
       with torch.no_grad():
         ages += 1
-        utils += 0.01*(torch.abs(net[2].weight.data[0]*neck) - utils)
+        for k in range(n_l1):
+          w_x = net[2].weight.data[0]*neck
+          util[k] = util[k] + 0.01*(2*(target - pred)*w_x[k] + (w_x[k])**2 - util[k])
         if skip==0 and run != 0:
           for _ in range(itr):
-            weak_node_i = torch.argmin(utils)
+            weak_node_i = torch.argmin(util)
             net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
             if net[0].bias is not None:
               net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0
-            utils[weak_node_i] = torch.median(utils)
+            util[weak_node_i] = torch.median(util)
             ages[weak_node_i] = 0
             if(n_l1//200 < 1):
               run = run - 1

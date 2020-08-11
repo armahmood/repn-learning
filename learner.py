@@ -169,8 +169,9 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   sample_average = 0.0
   util = torch.zeros(n_l1)
 
-  rr = 1/300  # Replacement rate per time step per feature
-  n_el = rr*n_l1  # Number of features eligible for replacement
+  tester_lr = 0.01
+  rr = 1/200  # Replacement rate per time step per feature
+  n_el = 0  # rr*n_l1  # Number of features eligible for replacement
 
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
@@ -190,17 +191,19 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
       sgd.step()
 
       n_el += rr*n_l1
-      if n_el >= 1:
-        util += 0.01*(torch.abs(net[2].weight.data[0]*neck) - util)
-      while n_el >= 1:
-        with torch.no_grad():
+      with torch.no_grad():
+        wx = net[2].weight.data[0]*neck
+        util_target = torch.abs(wx)
+        #util_target = 2*wx*loss + wx**2
+        util += tester_lr*(util_target - util)
+        while n_el >= 1:
           weak_node_i = torch.argmin(util)
           net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
           if net[0].bias is not None:
             net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
           net[2].weight[0][weak_node_i] = 0.0
           util[weak_node_i] = torch.median(util)
-        n_el -= 1
+          n_el -= 1
 
       bar.update(t)
   losses = np.array(losses)

@@ -184,7 +184,7 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
       net.zero_grad()
       loss.backward()
       #Evaluate step size parameter
-      f_out = net[1].out_features
+      f_out = neck
       sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
       step_size_param = 0.1/sample_average
       sgd = update_lr(sgd,step_size_param)
@@ -193,8 +193,8 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
       n_el += rr*n_l1
       with torch.no_grad():
         wx = net[2].weight.data[0]*neck
-        util_target = torch.abs(wx)
-        #util_target = 2*wx*loss + wx**2
+        # util_target = torch.abs(wx)
+        util_target = 2*wx*(target-pred) + wx**2
         util += tester_lr*(util_target - util)
         while n_el >= 1:
           weak_node_i = torch.argmin(util)

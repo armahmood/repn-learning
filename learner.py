@@ -166,13 +166,11 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
-  ages = torch.zeros(n_l1)
-  utils = torch.zeros(n_l1)
   sample_average = 0.0
   util = torch.zeros(n_l1)
 
-  rr = 0.005  # Replacement rate per time step per feature
-  n_el = 0  # Number of features eligible for replacement
+  rr = 1/300  # Replacement rate per time step per feature
+  n_el = rr*n_l1  # Number of features eligible for replacement
 
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):

@@ -49,18 +49,18 @@ def store_losses(losses, features, seed_num, search=False):
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
-  S_i = len(weights[weights<0])
-  threshold = len(weights)*0.6 - S_i
-  return threshold
+  threshold = []
+  for weight in weights:
+    S_i = len(weight[weight<0])
+    threshold.append(len(weight)*0.6 - S_i)
+  return torch.Tensor(threshold)
 
 def ltu(input, weights):
   """LTU logic"""
-  for i in range(len(input)):
-    tau_i = calculate_threshold(weights[i])
-    if input[i] < tau_i:
-      input[i] = 0.0
-    else: 
-      input[i] = 1.0
+  tau = calculate_threshold(weights)
+  input = input - tau
+  input[input>=0] = 1.0
+  input[input<0] =  0.0
   return input
 
 class LTU(nn.Module):
@@ -68,12 +68,9 @@ class LTU(nn.Module):
   def __init__(self, n_inp, n_tl1):
     super().__init__()
     self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
-    #To record output features of LTU layer
-    self.out_features = None
   
   def forward(self, input):
     input = ltu(input, self.weight)
-    self.out_features = input.clone()
     return input
 
 def update_lr(optimizer,lr):
@@ -283,7 +280,7 @@ def main():
   title = "Output weight norm of t-net: " + str(norm_out) 
   plt.suptitle(title, fontsize=13)
   axes = plt.axes()
-  axes.set_ylim([1.0, 5])
+  axes.set_ylim([1.0, 3.5])
   plt.legend()
 
   if args.save:

@@ -15,4 +15,4 @@ target_seed : 900
 ##3. "Tanh"
 ##Add to activation dict for more options
 activation_target : "LTU"
-activation_learning : "LTU"
+activation_learning : "Sigmoid"

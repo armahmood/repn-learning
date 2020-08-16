@@ -24,7 +24,7 @@ Three sources of randomness.
 #####UTILITY FUNCTIONS
 
 def update_config():
-    with open("config.yaml", 'r') as stream:
+    with open("config_new.yaml", 'r') as stream:
         try:
             config = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
@@ -112,7 +112,9 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
+    net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
+
+    #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     if act=="LTU":
@@ -121,39 +123,7 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
     torch.nn.init.zeros_(net[2].bias)
   return net
 
-def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
-  """Experiment with different number of features without search"""
-  tgen = torch.Generator()
-  tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
-  lossfunc = nn.MSELoss()
-  lgen = torch.Generator()
-  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
-  dgen = torch.Generator().manual_seed(seed_num + 2000)
-  losses = []
-  sample_average = 0.0
-  with progressbar.ProgressBar(max_value=T) as bar:
-    for t in range(T):
-      inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
-      target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
-      neck = net[:2](inp)
-      pred = net[2:](neck)
-      loss = lossfunc(pred, target)
-      losses.append(loss.item())
-      net.zero_grad()
-      loss.backward()
-      #Evaluate step size parameter
-      f_out = neck
-      sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
-      step_size_param = 0.1/sample_average
-      sgd = update_lr(sgd,step_size_param)
-      sgd.step()
-      bar.update(t)
-  losses = np.array(losses)
-  return losses
-
-
-def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
+def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
   tgen = torch.Generator()
   tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
@@ -164,12 +134,12 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
   lgen.manual_seed(seed_num + 3000)
   losses = []
   sample_average = 0.0
-  util = torch.zeros(n_l1)
+  if search:
+    util = torch.zeros(n_l1)
 
-  tester_lr = 0.01
-  rr = 1/100  # Replacement rate per time step per feature
-  n_el = 0  # rr*n_l1  # Number of features eligible for replacement
-
+    tester_lr = 0.01
+    rr = 1/200  # Replacement rate per time step per feature
+    n_el = 0  # rr*n_l1  # Number of features eligible for replacement
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
       inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
@@ -187,20 +157,26 @@ def run_experiment_search(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config):
       sgd = update_lr(sgd,step_size_param)
       sgd.step()
 
-      n_el += rr*n_l1
-      with torch.no_grad():
-        wx = net[2].weight.data[0]*neck
-        util_target = torch.abs(wx)
-        # util_target = 2*wx*(target-pred) + wx**2
-        util += tester_lr*(util_target - util)
-        while n_el >= 1:
-          weak_node_i = torch.argmin(util)
-          net[0].weight[weak_node_i] = (torch.randn((net[0].weight.size()[1],), generator=lgen)).float()  ### 2
-          if net[0].bias is not None:
-            net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
-          net[2].weight[0][weak_node_i] = 0.0
-          util[weak_node_i] = torch.median(util)
-          n_el -= 1
+      if search==True:
+        n_el += rr*n_l1
+        with torch.no_grad():
+          if config["tester"]==1:
+            util_target = torch.abs(net[2].weight.data[0])
+          if config["tester"]==2:
+            wx = net[2].weight.data[0]*neck
+            util_target = torch.abs(wx)
+          if config["tester"]==3:
+            wx = net[2].weight.data[0]*neck
+            util_target = 2*wx*(target-pred) + wx**2
+          util += tester_lr*(util_target - util)
+          while n_el >= 1:
+            weak_node_i = torch.argmin(util)
+            net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
+            if net[0].bias is not None:
+              net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
+            net[2].weight[0][weak_node_i] = 0.0
+            util[weak_node_i] = torch.median(util)
+            n_el -= 1
 
       bar.update(t)
   losses = np.array(losses)
@@ -261,7 +237,7 @@ def main():
     for l in range(n):
       print("Run:", l+1)
       if args.search:
-        net_loss = net_loss + run_experiment_search(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config)
+        net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config, search=True)
         if args.save_losses:
           store_losses(net_loss, n_feature[0], n_seed[0], search=True)
           sys.exit(1)

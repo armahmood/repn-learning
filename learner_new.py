@@ -33,7 +33,7 @@ def update_config():
 
 def store_losses(losses, features, seed_num, search=False):
   if search:
-    path = 'losses/search/' + str(features) + '/'  
+    path = 'losses/search/' + str(features) + '/'
   else:
     path = 'losses/fixed/' + str(features) + '/'
   try:
@@ -41,8 +41,8 @@ def store_losses(losses, features, seed_num, search=False):
   except:
     os.makedirs(path)
   fname = path + 'run_' + str(seed_num)
-  dbfile = open(fname, 'ab') 
-  pickle.dump(losses, dbfile)                      
+  dbfile = open(fname, 'ab')
+  pickle.dump(losses, dbfile)
   dbfile.close()
 
 #######
@@ -68,7 +68,7 @@ class LTU(nn.Module):
   def __init__(self, n_inp, n_tl1):
     super().__init__()
     self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
-  
+
   def forward(self, input):
     input = ltu(input, self.weight)
     return input
@@ -112,7 +112,7 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
+    net[0].weight.uniform_(-2, 2, generator=lgen)  ### 2
 
     #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
@@ -129,7 +129,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
   net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
+  sgd = optim.SGD(net[2:].parameters(), lr = 0.05)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
@@ -150,11 +150,6 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
       losses.append(loss.item())
       net.zero_grad()
       loss.backward()
-      #Evaluate step size parameter
-      f_out = neck
-      sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
-      step_size_param = 0.1/sample_average
-      sgd = update_lr(sgd,step_size_param)
       sgd.step()
 
       if search==True:
@@ -171,7 +166,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
           util += tester_lr*(util_target - util)
           while n_el >= 1:
             weak_node_i = torch.argmin(util)
-            net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight.size()[1],), generator=lgen)*2-1).float()  ### 2
+            net[0].weight[weak_node_i].uniform_(-2, 2, generator=lgen) ### 2
             if net[0].bias is not None:
               net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0
@@ -199,14 +194,14 @@ def main():
   parser.add_argument("-o", "--save", action='store_true',
                       help="Saves the output graph")
   parser.add_argument("--save_losses", action='store_true',
-                      help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")                    
+                      help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")
   parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=config["learner_seeds"],
                       help="seeds in case of multiple runs")
   parser.add_argument("-t", "--target_seed", type=int, default=config["target_seed"],
                       help="seed for choice of target net")
   args = parser.parse_args()
   T = args.examples
-  n = args.runs 
+  n = args.runs
   nbin = 200
   n_inp = args.input_size
   n_tl1 = 20
@@ -253,7 +248,7 @@ def main():
   tnet = initialize_target_net(n_inp, n_tl1, tgen, t_seed, config)
   norm_out = tnet[-1].weight.norm().data
   norm_out = format(float(norm_out), '.4f')
-  title = "Output weight norm of t-net: " + str(norm_out) 
+  title = "Output weight norm of t-net: " + str(norm_out)
   plt.suptitle(title, fontsize=13)
   axes = plt.axes()
   axes.set_ylim([1.0, 3.5])
@@ -263,7 +258,7 @@ def main():
     try:
       assert os.path.exists("output/")
     except:
-      os.makedirs('output/') 
+      os.makedirs('output/')
     filename = "output/out_" + str(t_seed)
     plt.savefig(filename)
   else:

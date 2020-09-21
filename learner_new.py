@@ -13,6 +13,7 @@ import sys
 from fractions import Fraction
 import pickle
 import yaml
+import math
 
 """
 Three sources of randomness.
@@ -102,6 +103,13 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
       tnet[1].weight = tnet[0].weight
   return tnet
 
+def calbound_kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
+    fan = torch.nn.init._calculate_correct_fan(tensor, mode)
+    gain = torch.nn.init.calculate_gain(nonlinearity, a)
+    std = gain / math.sqrt(fan)
+    bound = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
+    return bound
+
 def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   """Initializes learning network"""
   act = config["activation_learning"]
@@ -112,8 +120,9 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    net[0].weight.uniform_(-2, 2, generator=lgen)  ### 2
-
+    bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
+    net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
+    #net[0].weight.uniform_(-2, 2, generator=lgen)  ### 2
     #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
@@ -121,14 +130,14 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
       net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
-  return net
+  return net, bound
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
   tgen = torch.Generator()
   tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
+  net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
   sgd = optim.SGD(net[2:].parameters(), lr = 0.05)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
@@ -166,7 +175,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
           util += tester_lr*(util_target - util)
           while n_el >= 1:
             weak_node_i = torch.argmin(util)
-            net[0].weight[weak_node_i].uniform_(-2, 2, generator=lgen) ### 2
+            net[0].weight[weak_node_i].uniform_(-bound, bound, generator=lgen) ### 2
             if net[0].bias is not None:
               net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0

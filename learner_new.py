@@ -138,7 +138,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
   net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  sgd = optim.SGD(net[2:].parameters(), lr = 0.05)
+  sgd = optim.SGD(net[2:].parameters(), lr = 0.005)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
@@ -157,7 +157,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
       pred = net[2:](neck)
       loss = lossfunc(pred, target)
       losses.append(loss.item())
-      net.zero_grad()
+      sgd.zero_grad()
       loss.backward()
       sgd.step()
 

@@ -128,8 +128,12 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     if act=="LTU":
       net[1].weight = net[0].weight
-    torch.nn.init.zeros_(net[2].weight)
-    torch.nn.init.zeros_(net[2].bias)
+    net[2].weight.uniform_(-bound, bound, generator=lgen)### 2
+    fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(net[2].weight)
+    bound_bias = 1 / math.sqrt(fan_in)
+    net[2].bias.uniform_(-bound_bias, bound_bias, generator=lgen)
+    #torch.nn.init.zeros_(net[2].weight)
+    #torch.nn.init.zeros_(net[2].bias)
   return net, bound
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
@@ -138,7 +142,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
   net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  sgd = optim.SGD(net[2:].parameters(), lr = 0.005)
+  sgd = optim.SGD(net[2:].parameters(), lr = 0.01)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
@@ -157,7 +161,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
       pred = net[2:](neck)
       loss = lossfunc(pred, target)
       losses.append(loss.item())
-      sgd.zero_grad()
+      net.zero_grad()
       loss.backward()
       sgd.step()
 

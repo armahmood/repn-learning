@@ -120,29 +120,26 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
-    net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
-    #net[0].weight.uniform_(-2, 2, generator=lgen)  ### 2
+    #bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
+    #net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
+    net[0].weight.normal_(std=10.0, generator=lgen) ### 2
+    #net[0].weight.uniform_(-1, 1, generator=lgen)  ### 2
     #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     if act=="LTU":
       net[1].weight = net[0].weight
-    net[2].weight.uniform_(-bound, bound, generator=lgen)### 2
-    fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(net[2].weight)
-    bound_bias = 1 / math.sqrt(fan_in)
-    net[2].bias.uniform_(-bound_bias, bound_bias, generator=lgen)
-    #torch.nn.init.zeros_(net[2].weight)
-    #torch.nn.init.zeros_(net[2].bias)
-  return net, bound
+    torch.nn.init.zeros_(net[2].weight)
+    torch.nn.init.zeros_(net[2].bias)
+  return net
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
   tgen = torch.Generator()
   tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  sgd = optim.SGD(net[2:].parameters(), lr = 0.01)
+  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
+  adam = optim.Adam(net[2:].parameters(), lr = 0.0005)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
@@ -163,7 +160,7 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
       losses.append(loss.item())
       net.zero_grad()
       loss.backward()
-      sgd.step()
+      adam.step()
 
       if search==True:
         n_el += rr*n_l1
@@ -179,10 +176,13 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
           util += tester_lr*(util_target - util)
           while n_el >= 1:
             weak_node_i = torch.argmin(util)
-            net[0].weight[weak_node_i].uniform_(-bound, bound, generator=lgen) ### 2
+            net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen) ### 2
+            #net[0].weight[weak_node_i].uniform_(-1, 1, generator=lgen)
             if net[0].bias is not None:
               net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0
+            adam.state[net[2].weight]['exp_avg'][0][weak_node_i] = 0.0
+            adam.state[net[2].weight]['exp_avg_sq'][0][weak_node_i] = 0.0
             util[weak_node_i] = torch.median(util)
             n_el -= 1
 
@@ -215,7 +215,7 @@ def main():
   args = parser.parse_args()
   T = args.examples
   n = args.runs
-  nbin = 200
+  nbin = 10000
   n_inp = args.input_size
   n_tl1 = 20
   n_feature = args.features

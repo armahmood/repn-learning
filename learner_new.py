@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 from torch import nn, optim
-import matplotlib as mpl
-mpl.use('TKAgg')
 import matplotlib.pyplot as plt
 from random import choice
 from torch.nn.parameter import Parameter
@@ -80,7 +78,7 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-activations = {"LTU":LTU, "Sigmoid": nn.Sigmoid, "Tanh": nn.Tanh}
+activations = {"LTU":LTU, "Relu": nn.ReLU, "Sigmoid": nn.Sigmoid, "Tanh": nn.Tanh}
 
 def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
   """Initializes target network"""
@@ -103,7 +101,7 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
       tnet[1].weight = tnet[0].weight
   return tnet
 
-def calbound_kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
+def calbound_kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='relu'):
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)
     gain = torch.nn.init.calculate_gain(nonlinearity, a)
     std = gain / math.sqrt(fan)
@@ -117,12 +115,12 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
     activation_function_ = activations[act](n_inp, n_l1)
   else:
     activation_function_ = activations[act]()
-  net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
+  net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_ , nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    #bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
-    #net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
-    net[0].weight.normal_(std=10.0, generator=lgen) ### 2
+    bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
+    net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
+    #net[0].weight.normal_(std=10.0, generator=lgen) ### 2
     #net[0].weight.uniform_(-1, 1, generator=lgen)  ### 2
     #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
@@ -131,15 +129,15 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
       net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
-  return net
+  return net, bound
 
 def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
   tgen = torch.Generator()
   tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  adam = optim.Adam(net[2:].parameters(), lr = 0.0005)
+  net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
+  adam = optim.Adam(net[2:].parameters(), lr = 0.00003)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
@@ -147,8 +145,8 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
   if search:
     util = torch.zeros(n_l1)
 
-    tester_lr = 0.01
-    rr = 1/200  # Replacement rate per time step per feature
+    tester_lr = 0.99
+    rr = 0.01  # Replacement rate per time step per feature
     n_el = 0  # rr*n_l1  # Number of features eligible for replacement
   with progressbar.ProgressBar(max_value=T) as bar:
     for t in range(T):
@@ -174,17 +172,17 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
             wx = net[2].weight.data[0]*neck
             util_target = 2*wx*(target-pred) + wx**2
           util += tester_lr*(util_target - util)
-          while n_el >= 1:
-            weak_node_i = torch.argmin(util)
-            net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen) ### 2
-            #net[0].weight[weak_node_i].uniform_(-1, 1, generator=lgen)
+          if n_el >= 1:
+            weak_node_i = torch.topk(util, int(n_el), largest=False)[1]
+            #net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen) ### 2
+            net[0].weight[weak_node_i[0]].uniform_(-bound, bound, generator=lgen)
             if net[0].bias is not None:
               net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
             net[2].weight[0][weak_node_i] = 0.0
             adam.state[net[2].weight]['exp_avg'][0][weak_node_i] = 0.0
             adam.state[net[2].weight]['exp_avg_sq'][0][weak_node_i] = 0.0
-            util[weak_node_i] = torch.median(util)
-            n_el -= 1
+            util[weak_node_i[0]] = torch.median(util)
+            n_el = 0
 
       bar.update(t)
   losses = np.array(losses)

@@ -1,0 +1,14 @@
+{
+    "examples" : [100000],
+    "input_size" : [20],
+    "features" : [100, 1000],
+    "learner_seeds": [0],
+    "target_seed" : [900],
+    
+    "activation_target" : ["LTU"],
+    "activation_learning" : ["Sigmoid"],
+    
+    "tester" : [1],
+    "tester_lr" : [0.01],
+    "replacement_rate": [0.001]
+    }

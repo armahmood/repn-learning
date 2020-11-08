@@ -2,16 +2,14 @@ import numpy as np
 import torch
 from torch import nn, optim
 import matplotlib.pyplot as plt
-from random import choice
 from torch.nn.parameter import Parameter
-import progressbar
 import argparse
 import os
 import sys
-from fractions import Fraction
 import pickle
-import yaml
 import math
+import json
+from tqdm import tqdm
 
 """
 Three sources of randomness.
@@ -22,19 +20,16 @@ Three sources of randomness.
 
 #####UTILITY FUNCTIONS
 
-def update_config():
-    with open("config_new.yaml", 'r') as stream:
-        try:
-            config = yaml.safe_load(stream)
-        except yaml.YAMLError as exc:
-            print(exc)
-    return config
+def update_config(path):
+    with open(path, 'r') as json_file: 
+      data = json.load(json_file)
+    return data
 
-def store_losses(losses, features, seed_num, search=False):
+def store_losses(losses, features, seed_num, search=False, stname =''):
   if search:
-    path = 'losses/search/' + str(features) + '/'
+    path = stname + '/search/' + str(features) + '/'
   else:
-    path = 'losses/fixed/' + str(features) + '/'
+    path = stname + '/fixed/' + str(features) + '/'
   try:
     assert os.path.exists(path)
   except:
@@ -102,6 +97,7 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
   return tnet
 
 def calbound_kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='relu'):
+    """Calculate bounds for kaiming"""
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)
     gain = torch.nn.init.calculate_gain(nonlinearity, a)
     std = gain / math.sqrt(fan)
@@ -121,8 +117,6 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
     bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
     net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
     #net[0].weight.normal_(std=10.0, generator=lgen) ### 2
-    #net[0].weight.uniform_(-1, 1, generator=lgen)  ### 2
-    #net[0].weight.data = (torch.randn(net[0].weight.data.shape, generator=lgen)).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     if act=="LTU":
@@ -137,88 +131,80 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
   net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  adam = optim.Adam(net[2:].parameters(), lr = 0.00003)
+  if config['features'][0]==1000:
+    lr = 0.0001
+  elif config['features'][0]==100:
+    lr = 0.001
+  adam = optim.Adam(net[2:].parameters(), lr = lr)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
-  sample_average = 0.0
+
   if search:
     util = torch.zeros(n_l1)
-
-    tester_lr = 0.99
-    rr = 0.01  # Replacement rate per time step per feature
+    tester_lr = config["tester_lr"]
+    rr = config["replacement_rate"]  # Replacement rate per time step per feature
     n_el = 0  # rr*n_l1  # Number of features eligible for replacement
-  with progressbar.ProgressBar(max_value=T) as bar:
-    for t in range(T):
-      inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
-      target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
-      neck = net[:2](inp)
-      pred = net[2:](neck)
-      loss = lossfunc(pred, target)
-      losses.append(loss.item())
-      net.zero_grad()
-      loss.backward()
-      adam.step()
 
-      if search==True:
-        n_el += rr*n_l1
-        with torch.no_grad():
-          if config["tester"]==1:
-            util_target = torch.abs(net[2].weight.data[0])
-          if config["tester"]==2:
-            wx = net[2].weight.data[0]*neck
-            util_target = torch.abs(wx)
-          if config["tester"]==3:
-            wx = net[2].weight.data[0]*neck
-            util_target = 2*wx*(target-pred) + wx**2
-          util += tester_lr*(util_target - util)
-          if n_el >= 1:
-            weak_node_i = torch.topk(util, int(n_el), largest=False)[1]
-            #net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen) ### 2
-            net[0].weight[weak_node_i[0]].uniform_(-bound, bound, generator=lgen)
-            if net[0].bias is not None:
-              net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
-            net[2].weight[0][weak_node_i] = 0.0
-            adam.state[net[2].weight]['exp_avg'][0][weak_node_i] = 0.0
-            adam.state[net[2].weight]['exp_avg_sq'][0][weak_node_i] = 0.0
-            util[weak_node_i[0]] = torch.median(util)
-            n_el = 0
+  for _ in tqdm(range(T)):
+    inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
+    target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
+    neck = net[:2](inp)
+    pred = net[2:](neck)
+    loss = lossfunc(pred, target)
+    losses.append(loss.item())
+    net.zero_grad()
+    loss.backward()
+    adam.step()
 
-      bar.update(t)
+    if search==True:
+      n_el += rr*n_l1
+      with torch.no_grad():
+        if config["tester"]==1:
+          util_target = torch.abs(net[2].weight.data[0])
+        if config["tester"]==2:
+          wx = net[2].weight.data[0]*neck
+          util_target = torch.abs(wx)
+        if config["tester"]==3:
+          wx = net[2].weight.data[0]*neck
+          util_target = 2*wx*(target-pred) + wx**2
+        util += tester_lr*(util_target - util)
+        if n_el >= 1:
+          weak_node_i = torch.topk(util, int(n_el), largest=False)[1]
+          #net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen)
+          net[0].weight[weak_node_i[0]].uniform_(-bound, bound, generator=lgen) ### 2
+          net[2].weight[0][weak_node_i] = 0.0
+          adam.state[net[2].weight]['exp_avg'][0][weak_node_i] = 0.0
+          adam.state[net[2].weight]['exp_avg_sq'][0][weak_node_i] = 0.0
+          util[weak_node_i[0]] = torch.median(util)
+          n_el = 0
+
   losses = np.array(losses)
   return losses
 
 
 def main():
-  config = update_config()
   parser = argparse.ArgumentParser(description="Generate and Test")
+  parser.add_argument("--cfg", type=str, default='config.json',
+                      help="config file name")
   parser.add_argument("-se", "--search", action='store_true',
                       help="run experiment with search")
-  parser.add_argument("-e", "--examples", type=int, default=config["examples"],
-                      help="no of examples to learn on")
-  parser.add_argument("-n", "--runs", type=int, default=config["runs"],
-                      help="number of runs")
-  parser.add_argument("-i", "--input_size", type=int, default=config["input_size"],
-                      help="Input dimension")
-  parser.add_argument("-f", "--features",  nargs='+', type=int, default=config["features"],
-                      help="Number of dimension(pass multiple)")
   parser.add_argument("-o", "--save", action='store_true',
                       help="Saves the output graph")
   parser.add_argument("--save_losses", action='store_true',
                       help="Saves losses for individual runs(NOT TO BE USED WITHOUT BASH SCRIPT)")
-  parser.add_argument("-s", "--seeds",  nargs='+', type=int, default=config["learner_seeds"],
-                      help="seeds in case of multiple runs")
-  parser.add_argument("-t", "--target_seed", type=int, default=config["target_seed"],
-                      help="seed for choice of target net")
   args = parser.parse_args()
-  T = args.examples
-  n = args.runs
+  fname = args.cfg
+  config = update_config(fname)
+  T = config["examples"]
+  n = config["runs"]
   nbin = 10000
-  n_inp = args.input_size
+  n_inp = config["input_size"]
   n_tl1 = 20
-  n_feature = args.features
-  n_seed = args.seeds
-  t_seed = args.target_seed
+  n_feature = config["features"]
+  n_seed = config["learner_seeds"]
+  t_seed = config["target_seed"]
+  stname = "relu"+"_rr" + str(config["replacement_rate"]) + "_dr"+ str(config["tester_lr"])
 
   try:
     path = "output/out_" + str(t_seed)+".png"
@@ -245,12 +231,12 @@ def main():
       if args.search:
         net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config, search=True)
         if args.save_losses:
-          store_losses(net_loss, n_feature[0], n_seed[0], search=True)
+          store_losses(net_loss, n_feature[0], n_seed[0], search=True, stname=stname)
           sys.exit(1)
       else:
         net_loss = net_loss + run_experiment(n_inp, n_tl1, T, nl_1, n_seed[l], t_seed, config)
         if args.save_losses:
-          store_losses(net_loss, n_feature[0], n_seed[0])
+          store_losses(net_loss, n_feature[0], n_seed[0], stname=stname)
           sys.exit(1)
     net_loss = net_loss/n
     bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)

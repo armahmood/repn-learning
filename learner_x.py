@@ -152,9 +152,6 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search=
         if config["tester"]==2:
           wx = net[2].weight.data[0]*neck
           util_target = torch.abs(wx)
-        if config["tester"]==3:
-          wx = net[2].weight.data[0]*neck
-          util_target = 2*wx*(target-pred) + wx**2
         
         util += tester_lr*(util_target - util)
         

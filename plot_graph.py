@@ -1,15 +1,14 @@
 import numpy as np
 import pickle
-import matplotlib as mpl
-mpl.use('TKAgg')
+import statistics
 import matplotlib.pyplot as plt
 import argparse
-
+import math
 def read_losses(features, seed_num, search=False):
     if search:
-        path = 'losses/search/' + str(features) + '/'  
+        path = 'LTU_rr0.005000_dr0.01/search/' + str(features) + '/'  
     else:
-        path = 'losses/fixed/' + str(features) + '/'
+        path = 'LTU_rr0.005000_dr0.01/fixed/' + str(features) + '/'
     fname = path + 'run_' + str(seed_num)
     dbfile = open(fname, 'rb')
     db = pickle.load(dbfile)
@@ -38,7 +37,7 @@ def main():
                         help="seeds used in experiment")            
     parser.add_argument("-p", "--plot_all", action='store_true',
                           help="Plots all graphs")
-    nbin = 200
+    nbin = 1000
     args = parser.parse_args()
     T = args.examples
     n_feature = args.features
@@ -58,19 +57,24 @@ def main():
             plt.plot(range(0, T, nbin), bin_losses, label=label)
         else:
             net_loss = calculate_average(features, n_seed, search=True)
+            stds = net_loss.std()/math.sqrt(30)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
             label = str(features) + "-s"
             plt.plot(range(0, T, nbin), bin_losses, label=label)
+            plt.fill_between(range(0, T, nbin), bin_losses-stds, bin_losses+stds, alpha=0.4)
             net_loss = calculate_average(features, n_seed)
+            stdf = net_loss.std()/math.sqrt(30)
             bin_losses = net_loss.reshape(T//nbin, nbin).mean(1)
             label = str(features) + "-f"
             plt.plot(range(0, T, nbin), bin_losses, label=label)
-            
+            plt.fill_between(range(0, T, nbin), bin_losses-stds, bin_losses+stds, alpha=0.4)
+
     axes = plt.axes()
     axes.set_ylim([1.0, 3.5])
     plt.legend()
-    plt.savefig("final.png")
+    plt.xlabel('Number of Samples')
+    plt.ylabel('Mean Squared Error(MSE)')
+    plt.savefig("paper1.svg", format="svg")
 
 if __name__ == "__main__":
     main()
-

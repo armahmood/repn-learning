@@ -28,7 +28,8 @@ def main():
             "activation_learning" : cfg["activation_learning"],
             "tester" : cfg["tester"],
             "tester_lr" : cfg["tester_lr"],
-            "replacement_rate": cfg["replacement_rate"]
+            "replacement_rate": cfg["replacement_rate"],
+            "step": cfg["step"]
         }
         jsonstr = json.dumps(config_struct)
         w_name = 'cfg_temp/'+ str(i) + '.json'

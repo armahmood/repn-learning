@@ -43,11 +43,11 @@ def store_losses(losses, features, seed_num, search=False, stname =''):
 
 def calculate_threshold(weights):
   """Calculates LTU threshold according to weights"""
-  threshold = []
-  for weight in weights:
-    S_i = len(weight[weight<0])
-    threshold.append(len(weight)*0.6 - S_i)
-  return torch.Tensor(threshold)
+  m = weights.shape[1]
+  beta = 0.6
+  S = torch.sum(weights<0, dim=1)
+  threshold = torch.ones(weights.shape[0])*m*beta - S.float()
+  return threshold
 
 def ltu(input, weights):
   """LTU logic"""
@@ -62,7 +62,7 @@ class LTU(nn.Module):
   def __init__(self, n_inp, n_tl1):
     super().__init__()
     self.weight = Parameter(torch.Tensor(n_tl1, n_inp))
-
+  
   def forward(self, input):
     input = ltu(input, self.weight)
     return input
@@ -73,7 +73,7 @@ def update_lr(optimizer,lr):
         param_group['lr'] = lr
     return optimizer
 
-activations = {"LTU":LTU, "Relu": nn.ReLU, "Sigmoid": nn.Sigmoid, "Tanh": nn.Tanh}
+activations = {"LTU":LTU, "Sigmoid": nn.Sigmoid, "Tanh": nn.Tanh}
 
 def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
   """Initializes target network"""
@@ -96,14 +96,6 @@ def initialize_target_net(n_inp, n_tl1, tgen, seed_num_target, config):
       tnet[1].weight = tnet[0].weight
   return tnet
 
-def calbound_kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='relu'):
-    """Calculate bounds for kaiming"""
-    fan = torch.nn.init._calculate_correct_fan(tensor, mode)
-    gain = torch.nn.init.calculate_gain(nonlinearity, a)
-    std = gain / math.sqrt(fan)
-    bound = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
-    return bound
-
 def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
   """Initializes learning network"""
   act = config["activation_learning"]
@@ -111,42 +103,37 @@ def initialize_learning_net(n_inp, n_l1, lgen, seed_num, config):
     activation_function_ = activations[act](n_inp, n_l1)
   else:
     activation_function_ = activations[act]()
-  net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_ , nn.Linear(n_l1, 1))
+  net = nn.Sequential(nn.Linear(n_inp, n_l1, bias=False), activation_function_, nn.Linear(n_l1, 1))
   with torch.no_grad():
     lgen.manual_seed(seed_num)
-    bound = calbound_kaiming_uniform_(net[0].weight, a=math.sqrt(5))
-    net[0].weight.uniform_(-bound, bound, generator=lgen)### 2
-    #net[0].weight.normal_(std=10.0, generator=lgen) ### 2
+    net[0].weight.data = (torch.randint(0, 2, net[0].weight.data.shape, generator=lgen)*2-1).float()  ### 2
     if net[0].bias is not None:
       net[0].bias.data = torch.randn(net[0].bias.data.shape, generator=lgen)
     if act=="LTU":
       net[1].weight = net[0].weight
     torch.nn.init.zeros_(net[2].weight)
     torch.nn.init.zeros_(net[2].bias)
-  return net, bound
+  return net
 
-def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search =False):
+def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search=False):
   tgen = torch.Generator()
   tnet = initialize_target_net(n_inp, n_tl1, tgen, target_seed, config)
   lossfunc = nn.MSELoss()
   lgen = torch.Generator()
-  net, bound = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
-  if config['features'][0]==1000:
-    lr = 0.0001
-  elif config['features'][0]==100:
-    lr = 0.001
-  adam = optim.Adam(net[2:].parameters(), lr = lr)
+  net = initialize_learning_net(n_inp, n_l1, lgen, seed_num, config)
+  sgd = optim.SGD(net[2:].parameters(), lr = 0.0)
   dgen = torch.Generator().manual_seed(seed_num + 2000)
   lgen.manual_seed(seed_num + 3000)
   losses = []
-
+  sample_average = 0.0  
   if search:
     util = torch.zeros(n_l1)
     tester_lr = config["tester_lr"]
-    rr = config["replacement_rate"]  # Replacement rate per time step per feature
+    rr = config["replacement_rate"] ## Replacement rate per time step per feature
+    gamma = config["step"]
     n_el = 0  # rr*n_l1  # Number of features eligible for replacement
 
-  for _ in tqdm(range(T)):
+  for t in tqdm(range(T)):
     inp = torch.randint(0, 2, (n_inp,), generator=dgen, dtype=torch.float32)  ### 3
     target = tnet(inp) + torch.randn(1, generator=dgen)  ### 3
     neck = net[:2](inp)
@@ -155,9 +142,14 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
     losses.append(loss.item())
     net.zero_grad()
     loss.backward()
-    adam.step()
-
-    if search==True:
+    #Evaluate step size parameter
+    f_out = neck
+    sample_average = (sample_average *t + (f_out.norm()**2).item())/(t+1)
+    step_size_param = gamma/sample_average
+    sgd = update_lr(sgd,step_size_param)
+    sgd.step()
+         
+    if search:
       n_el += rr*n_l1
       with torch.no_grad():
         if config["tester"]==1:
@@ -171,12 +163,11 @@ def run_experiment(n_inp, n_tl1, T, n_l1, seed_num, target_seed, config, search 
         util += tester_lr*(util_target - util)
         if n_el >= 1:
           weak_node_i = torch.topk(util, int(n_el), largest=False)[1]
-          #net[0].weight[weak_node_i].normal_(std=10.0, generator=lgen)
-          net[0].weight[weak_node_i[0]].uniform_(-bound, bound, generator=lgen) ### 2
+          net[0].weight[weak_node_i] = (torch.randint(0, 2, (net[0].weight[weak_node_i].shape), generator=lgen)*2-1).float()  ### 2
+          if net[0].bias is not None:
+            net[0].bias[weak_node_i] = torch.randn(1, generator=lgen)
           net[2].weight[0][weak_node_i] = 0.0
-          adam.state[net[2].weight]['exp_avg'][0][weak_node_i] = 0.0
-          adam.state[net[2].weight]['exp_avg_sq'][0][weak_node_i] = 0.0
-          util[weak_node_i[0]] = torch.median(util)
+          util[weak_node_i] = torch.median(util)
           n_el = 0
 
   losses = np.array(losses)
@@ -204,7 +195,9 @@ def main():
   n_feature = config["features"]
   n_seed = config["learner_seeds"]
   t_seed = config["target_seed"]
-  stname = "relu"+"_rr" + str(config["replacement_rate"]) + "_dr"+ str(config["tester_lr"])
+
+  stname = "LTUorgpaperredo"+"_rr" + "{:.6f}".format(config["replacement_rate"]) + "_gamma"+ str(config["step"])
+
 
   try:
     path = "output/out_" + str(t_seed)+".png"
@@ -245,7 +238,7 @@ def main():
   tnet = initialize_target_net(n_inp, n_tl1, tgen, t_seed, config)
   norm_out = tnet[-1].weight.norm().data
   norm_out = format(float(norm_out), '.4f')
-  title = "Output weight norm of t-net: " + str(norm_out)
+  title = "Output weight norm of t-net: " + str(norm_out) 
   plt.suptitle(title, fontsize=13)
   axes = plt.axes()
   axes.set_ylim([1.0, 3.5])
@@ -255,7 +248,7 @@ def main():
     try:
       assert os.path.exists("output/")
     except:
-      os.makedirs('output/')
+      os.makedirs('output/') 
     filename = "output/out_" + str(t_seed)
     plt.savefig(filename)
   else:

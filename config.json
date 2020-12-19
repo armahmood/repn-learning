@@ -1,0 +1,17 @@
+{
+    "examples" : 1000000,
+    "runs" : 1,
+    "input_size" : 20,
+    "features" : [100],
+    "learner_seeds": [1],
+    "target_seed" : 900,
+    
+    "activation_target" : "LTU",
+    "activation_learning" : "LTU",
+    
+    "tester" : 1,
+    "tester_lr" : 0.01,
+    "replacement_rate": 0.005,
+    "step": 0.001
+
+}
